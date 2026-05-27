@@ -33,3 +33,4 @@ API disponible sur http://localhost:8000
 ```bash
 curl -X POST "http://localhost:8000/scrape?site=citrix&country=FR"
 ```
+
