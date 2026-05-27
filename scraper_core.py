@@ -189,6 +189,30 @@ class DirectoryScraper:
             except Exception:
                 continue
         if not rows:
+            # Aucun résultat trouvé — log de debug pour identifier les bons sélecteurs
+            self.log.warning(f"❌ Aucun résultat avec sélecteurs {sels['result_row']!r}")
+            try:
+                body_text = await page.evaluate("document.body.innerText")
+                self.log.info(f"body length: {len(body_text)} chars")
+                self.log.info(f"body sample: {body_text[:300]!r}")
+                # Classes CSS les plus fréquentes sur la page
+                top_classes = await page.evaluate("""
+                    () => {
+                        const counts = {};
+                        document.querySelectorAll('[class]').forEach(el => {
+                            el.className.toString().split(/\\s+/).forEach(c => {
+                                if (c) counts[c] = (counts[c] || 0) + 1;
+                            });
+                        });
+                        return Object.entries(counts)
+                            .sort((a,b) => b[1]-a[1])
+                            .slice(0, 30)
+                            .map(([c,n]) => `${c}(${n})`);
+                    }
+                """)
+                self.log.info(f"top classes: {top_classes}")
+            except Exception as e:
+                self.log.warning(f"debug introspection failed: {e}")
             return 0
 
         new_count = 0
@@ -259,8 +283,14 @@ class DirectoryScraper:
                 locale="fr-FR",
             )
             page = await context.new_page()
-            await page.goto(self.config["url"], wait_until="networkidle", timeout=30000)
+            # `networkidle` ne marche pas sur les sites corporate (trackers/analytics
+            # continus). `domcontentloaded` charge le DOM puis on attend que le JS pose
+            # ses composants via un wait fixe.
+            self.log.info(f"goto {self.config['url']}")
+            await page.goto(self.config["url"], wait_until="domcontentloaded", timeout=45000)
+            await page.wait_for_timeout(3000)  # laisser le JS s'initialiser
             await self._pause()
+            self.log.info(f"page loaded, title={await page.title()!r}")
 
             ok = await self._try_select_country(page)
             if ok:
